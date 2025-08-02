@@ -32,10 +32,14 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// In-memory storage for demo (replace with real database)
-let users = [];
-let assessments = [];
-let purchases = [];
+// Persistent storage (use database in production)
+global.users = global.users || [];
+global.assessments = global.assessments || [];
+global.purchases = global.purchases || [];
+
+let users = global.users;
+let assessments = global.assessments;
+let purchases = global.purchases;
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
