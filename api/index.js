@@ -62,6 +62,11 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', time: new Date() });
 });
 
+// Public test route
+app.get('/', (req, res) => {
+    res.json({ message: 'Backend is working!', time: new Date() });
+});
+
 app.post('/api/auth/signup', async (req, res) => {
     try {
         const { fullName, email, password, jobTitle, company, industry, teamSize } = req.body;
@@ -143,6 +148,7 @@ app.post('/api/auth/login', async (req, res) => {
         res.status(500).json({ error: 'Login failed' });
     }
 });
+
 
 // Initialize and export
 initDB();
