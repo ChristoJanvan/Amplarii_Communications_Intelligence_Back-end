@@ -102,7 +102,160 @@ app.get('/api', (req, res) => {
   });
 });
 
-// User profile endpoint
+    // Authentication middleware
+    function authenticateToken(req, res, next) {
+      const authHeader = req.headers['authorization'];
+      const token = authHeader && authHeader.split(' ')[1];
+
+      if (!token) {
+        return res.status(401).json({ error: 'Access token required' });
+      }
+
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+      } catch (error) {
+        return res.status(403).json({ error: 'Invalid token' });
+      }
+    }
+
+    // User registration
+    app.post('/api/auth/register', async (req, res) => {
+      try {
+        const { fullName, email, password } = req.body;
+
+        if (!fullName || !email || !password) {
+          return res.status(400).json({ error: 'All fields required' });
+        }
+
+        // Check if user exists
+        const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+        if (existingUser.rows.length > 0) {
+          return res.status(400).json({ error: 'User already exists' });
+        }
+
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, 12);
+
+        // Create user
+        const query = `
+          INSERT INTO users (full_name, email, password, created_at)
+          VALUES ($1, $2, $3, NOW())
+          RETURNING id, full_name, email, created_at
+        `;
+        
+        const result = await pool.query(query, [fullName, email, hashedPassword]);
+        const user = result.rows[0];
+
+        // Generate JWT
+        const token = jwt.sign(
+          { userId: user.id, email: user.email },
+          process.env.JWT_SECRET,
+          { expiresIn: process.env.JWT_EXPIRES_IN }
+        );
+
+        res.status(201).json({
+          success: true,
+          message: 'User created successfully',
+          token,
+          user: {
+            id: user.id,
+            fullName: user.full_name,
+            email: user.email
+          }
+        });
+
+      } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({ error: 'Registration failed' });
+      }
+    });
+
+    // User login
+    app.post('/api/auth/login', async (req, res) => {
+      try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+          return res.status(400).json({ error: 'Email and password required' });
+        }
+
+        // Find user
+        const query = `SELECT * FROM users WHERE email = $1`;
+        const result = await pool.query(query, [email]);
+        
+        if (result.rows.length === 0) {
+          return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        const user = result.rows[0];
+
+        // Check password
+        const validPassword = await bcrypt.compare(password, user.password);
+        if (!validPassword) {
+          return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        // Generate JWT
+        const token = jwt.sign(
+          { userId: user.id, email: user.email },
+          process.env.JWT_SECRET,
+          { expiresIn: process.env.JWT_EXPIRES_IN }
+        );
+
+        res.json({
+          success: true,
+          message: 'Login successful',
+          token,
+          user: {
+            id: user.id,
+            fullName: user.full_name,
+            email: user.email,
+            jobTitle: user.job_title,
+            company: user.company,
+            industry: user.industry,
+            teamSize: user.team_size
+          }
+        });
+
+      } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Login failed' });
+      }
+    });
+
+    // Get user profile (protected)
+    app.get('/api/users/profile', authenticateToken, async (req, res) => {
+      try {
+        const query = `SELECT * FROM users WHERE id = $1`;
+        const result = await pool.query(query, [req.user.userId]);
+        
+        if (result.rows.length === 0) {
+          return res.status(404).json({ error: 'User not found' });
+        }
+
+        const user = result.rows[0];
+        res.json({
+          success: true,
+          user: {
+            id: user.id,
+            fullName: user.full_name,
+            email: user.email,
+            jobTitle: user.job_title,
+            company: user.company,
+            industry: user.industry,
+            teamSize: user.team_size
+          }
+        });
+
+      } catch (error) {
+        console.error('Profile fetch error:', error);
+        res.status(500).json({ error: 'Failed to fetch profile' });
+      }
+    });
+
+    // User profile endpoint
 app.post('/api/users/profile', async (req, res) => {
   try {
     const { fullName, email, jobTitle, company, industry, teamSize, emailUpdates } = req.body;
