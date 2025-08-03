@@ -8,7 +8,11 @@ const app = express();
 
 // Middleware
 app.use(cors({
-    origin: ['https://amplarii-communications-intelligence-vceu.onrender.com', 'http://localhost:3000'],
+    origin: [
+        'https://amplarii-communications-intelligence-vceu.onrender.com',
+        'https://amplarii-communications-intelligenc-ten.vercel.app',
+        'http://localhost:3000'
+    ],
     credentials: true
 }));
 app.use(express.json());
