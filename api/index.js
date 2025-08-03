@@ -174,7 +174,169 @@ app.post('/api/assessments/results', async (req, res) => {
   }
 });
 
-// Payment endpoint
+    // Chat endpoint for AI assistant
+    app.post('/api/chat', async (req, res) => {
+      try {
+        const { email, message, conversationId } = req.body;
+
+        if (!email || !message) {
+          return res.status(400).json({ error: 'Email and message are required' });
+        }
+
+        // Get user's assessment data for context
+        const userQuery = `SELECT * FROM users WHERE email = $1`;
+        const userResult = await pool.query(userQuery, [email]);
+        
+        const assessmentQuery = `
+          SELECT * FROM assessments 
+          WHERE email = $1 
+          ORDER BY created_at DESC 
+          LIMIT 1
+        `;
+        const assessmentResult = await pool.query(assessmentQuery, [email]);
+
+        if (userResult.rows.length === 0) {
+          return res.status(404).json({ error: 'User not found' });
+        }
+
+        const user = userResult.rows[0];
+        const assessment = assessmentResult.rows.length > 0 ? assessmentResult.rows[0] : null;
+
+        // Build context for AI
+        let context = `User: ${user.full_name} (${user.email})`;
+        if (user.job_title) context += `\nRole: ${user.job_title}`;
+        if (user.company) context += ` at ${user.company}`;
+        if (user.industry) context += `\nIndustry: ${user.industry}`;
+
+        if (assessment) {
+          context += `\nCommunication Signature: ${assessment.signature}`;
+          context += `\nDominant Traits: ${JSON.stringify(JSON.parse(assessment.dominant_traits))}`;
+          context += `\nScores: ${JSON.stringify(JSON.parse(assessment.scores))}`;
+        }
+
+        // Simple AI response (replace with actual AI integration)
+        const aiResponse = generateAIResponse(message, context, assessment);
+
+        res.json({
+          success: true,
+          response: aiResponse,
+          context: assessment ? 'assessment_available' : 'no_assessment'
+        });
+
+      } catch (error) {
+        console.error('Chat error:', error);
+        res.status(500).json({ error: 'Chat processing failed' });
+      }
+    });
+
+    function generateAIResponse(message, userContext, assessment) {
+      const lowerMessage = message.toLowerCase();
+      
+      // Assessment-specific responses
+      if (assessment) {
+        const traits = JSON.parse(assessment.dominant_traits);
+        const signature = assessment.signature;
+        
+        if (lowerMessage.includes('signature') || lowerMessage.includes('what am i')) {
+          return `Based on your assessment, you are a ${signature}. This means you naturally ${getTraitDescription(traits.drive)} in your approach to work, ${getTraitDescription(traits.expression)} in how you communicate, ${getTraitDescription(traits.adaptive)} when facing change, and ${getTraitDescription(traits.intelligence)} in how you process information.`;
+        }
+        
+        if (lowerMessage.includes('strength') || lowerMessage.includes('good at')) {
+          return getStrengthsResponse(traits);
+        }
+        
+        if (lowerMessage.includes('improve') || lowerMessage.includes('better')) {
+          return getImprovementResponse(traits);
+        }
+        
+        if (lowerMessage.includes('team') || lowerMessage.includes('colleague')) {
+          return getTeamResponse(traits);
+        }
+        
+        if (lowerMessage.includes('adapt') || lowerMessage.includes('different')) {
+          return getAdaptationResponse(traits);
+        }
+      }
+      
+      // General responses
+      if (lowerMessage.includes('hello') || lowerMessage.includes('hi')) {
+        return assessment 
+          ? `Hi! I'm here to help you understand and apply your communication signature. Feel free to ask me about your results, how to work with different types of people, or how to leverage your strengths.`
+          : `Hello! I can help you understand communication styles and frameworks. To give you personalized advice, you'll need to complete the assessment first.`;
+      }
+      
+      if (lowerMessage.includes('help')) {
+        return assessment
+          ? `I can help you with:\n• Understanding your communication signature\n• Working with different personality types\n• Leveraging your strengths\n• Adapting your style for better results\n\nWhat would you like to explore?`
+          : `I can help you understand communication styles and take the assessment. Complete your profile and assessment first for personalized insights.`;
+      }
+      
+      return assessment
+        ? `That's a great question about communication! Based on your ${assessment.signature} profile, I'd suggest considering your natural ${JSON.parse(assessment.dominant_traits).drive} drive and ${JSON.parse(assessment.dominant_traits).expression} communication style. Could you be more specific about what you'd like to know?`
+        : `I'd love to help you with communication strategies! For personalized advice based on your unique style, please complete the assessment first.`;
+    }
+
+    function getTraitDescription(trait) {
+      const descriptions = {
+        action: "prefer taking immediate action and seeing quick results",
+        research: "like to understand details thoroughly before proceeding", 
+        collaborate: "focus on building consensus and team alignment",
+        optimize: "emphasize efficiency and systematic approaches",
+        expressive: "communicate openly and energetically",
+        reflective: "think before speaking and prefer structured communication",
+        interactive: "love conversational exchanges and building on ideas",
+        purposeful: "communicate with clear intent and focus",
+        flexible: "adapt quickly and embrace change as opportunity",
+        analytical: "analyze implications before adapting",
+        collaborative: "consider human impact when adapting",
+        steady: "balance change with maintaining stability",
+        intuitive: "trust instincts and see big-picture patterns",
+        analytical: "rely on data and systematic reasoning",
+        social: "value input from others and multiple perspectives", 
+        experiential: "draw on past experiences and proven approaches"
+      };
+      return descriptions[trait] || "have a unique approach";
+    }
+
+    function getStrengthsResponse(traits) {
+      const strengths = {
+        action: "You excel at making quick decisions and driving results",
+        research: "You bring thoroughness and deep analysis to projects", 
+        collaborate: "You build strong team consensus and alignment",
+        optimize: "You create efficient systems and processes",
+        expressive: "You energize others with your open communication",
+        reflective: "You provide thoughtful, well-considered input",
+        interactive: "You facilitate great conversations and idea-building",
+        purposeful: "You communicate with clarity and impact"
+      };
+      
+      return `Your key strengths include: ${strengths[traits.drive] || 'Unique problem-solving approaches'}, ${strengths[traits.expression] || 'distinctive communication style'}, and your ability to ${traits.adaptive === 'flexible' ? 'adapt quickly to change' : traits.adaptive === 'steady' ? 'provide stability during change' : 'navigate change thoughtfully'}.`;
+    }
+
+    function getImprovementResponse(traits) {
+      const improvements = {
+        action: "Consider slowing down occasionally to gather more input from others",
+        research: "Try setting time limits for analysis to avoid over-researching",
+        collaborate: "Sometimes make decisions efficiently even without full consensus", 
+        optimize: "Be open to creative solutions that might not follow standard processes",
+        expressive: "Practice listening more and giving others space to contribute",
+        reflective: "Share your thoughts more frequently, even if they're not fully formed",
+        interactive: "Sometimes focus on delivering clear conclusions rather than just exploring ideas",
+        purposeful: "Add more warmth and relationship-building to your communications"
+      };
+      
+      return `To grow your communication effectiveness: ${improvements[traits.drive] || 'Continue developing your unique approach'} and ${improvements[traits.expression] || 'keep refining your communication style'}. Remember, these are suggestions to add to your strengths, not replace them.`;
+    }
+
+    function getTeamResponse(traits) {
+      return `When working with teams, leverage your ${traits.drive} approach by ${traits.drive === 'action' ? 'helping the team move forward decisively' : traits.drive === 'research' ? 'ensuring decisions are well-informed' : traits.drive === 'collaborate' ? 'building strong team unity' : 'keeping the team organized and efficient'}. Your ${traits.expression} communication style helps by ${traits.expression === 'expressive' ? 'bringing energy and openness' : traits.expression === 'reflective' ? 'providing thoughtful perspectives' : traits.expression === 'interactive' ? 'facilitating great discussions' : 'keeping communications clear and focused'}.`;
+    }
+
+    function getAdaptationResponse(traits) {
+      return `To adapt your style with different people: With action-oriented colleagues, be direct and focus on results. With research-oriented people, provide data and allow time for analysis. With collaborative types, involve them in decisions. With process-oriented individuals, follow structure and be systematic. Your natural ${traits.adaptive} approach to change will help you ${traits.adaptive === 'flexible' ? 'adjust quickly' : traits.adaptive === 'steady' ? 'maintain stability while adapting' : 'make thoughtful adjustments'}.`;
+    }
+
+    // Payment endpoint
 app.post('/api/purchases/payment', async (req, res) => {
   try {
     const { email, serviceType, amount, token } = req.body;
