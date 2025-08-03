@@ -74,30 +74,38 @@ app.post('/api/users/profile', async (req, res) => {
     }
 
     // Check if user exists
-    let userIndex = users.findIndex(u => u.email === email);
+    const existingUser = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     
-    if (userIndex >= 0) {
+    let user;
+    if (existingUser.rows.length > 0) {
       // Update existing user
-      users[userIndex] = { ...users[userIndex], fullName, jobTitle, company, industry, teamSize, emailUpdates };
+      const updateResult = await pool.query(
+        'UPDATE users SET full_name = $1, job_title = $2, company = $3, industry = $4, team_size = $5, email_updates = $6 WHERE email = $7 RETURNING *',
+        [fullName, jobTitle, company, industry, teamSize, emailUpdates, email]
+      );
+      user = updateResult.rows[0];
     } else {
       // Create new user
-      users.push({
-        id: Date.now().toString(),
-        fullName,
-        email,
-        jobTitle,
-        company,
-        industry,
-        teamSize,
-        emailUpdates,
-        createdAt: new Date().toISOString()
-      });
+      const insertResult = await pool.query(
+        'INSERT INTO users (full_name, email, job_title, company, industry, team_size, email_updates) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+        [fullName, email, jobTitle, company, industry, teamSize, emailUpdates]
+      );
+      user = insertResult.rows[0];
     }
 
     res.json({
       success: true,
-      message: userIndex >= 0 ? 'Profile updated' : 'Profile created',
-      user: users[userIndex >= 0 ? userIndex : users.length - 1]
+      message: existingUser.rows.length > 0 ? 'Profile updated' : 'Profile created',
+      user: {
+        id: user.id,
+        fullName: user.full_name,
+        email: user.email,
+        jobTitle: user.job_title,
+        company: user.company,
+        industry: user.industry,
+        teamSize: user.team_size,
+        emailUpdates: user.email_updates
+      }
     });
 
   } catch (error) {
@@ -115,29 +123,23 @@ app.post('/api/assessments/results', async (req, res) => {
       return res.status(400).json({ error: 'Email and signature required' });
     }
 
-    const user = users.find(u => u.email === email);
-    if (!user) {
+    const userResult = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const assessment = {
-      id: Date.now().toString(),
-      userId: user.id,
-      responses,
-      scores,
-      dominantTraits,
-      signature,
-      signatureKey,
-      completedAt: new Date().toISOString()
-    };
-
-    assessments.push(assessment);
+    const userId = userResult.rows[0].id;
+    
+    const assessmentResult = await pool.query(
+      'INSERT INTO assessments (user_id, responses, scores, dominant_traits, signature, signature_key) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+      [userId, JSON.stringify(responses), JSON.stringify(scores), JSON.stringify(dominantTraits), signature, signatureKey]
+    );
 
     res.status(201).json({
       success: true,
       message: 'Assessment results saved',
-      assessmentId: assessment.id,
-      signature: assessment.signature
+      assessmentId: assessmentResult.rows[0].id,
+      signature: signature
     });
 
   } catch (error) {
@@ -155,28 +157,23 @@ app.post('/api/purchases/payment', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const user = users.find(u => u.email === email);
-    if (!user) {
+    const userResult = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    const userId = userResult.rows[0].id;
+    
     // Mock payment processing
-    const purchase = {
-      id: Date.now().toString(),
-      userId: user.id,
-      serviceType,
-      amount,
-      status: 'completed', // Mock success
-      transactionId: 'mock_' + Date.now(),
-      createdAt: new Date().toISOString()
-    };
-
-    purchases.push(purchase);
+    const purchaseResult = await pool.query(
+      'INSERT INTO purchases (user_id, service_type, amount, status, transaction_id) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [userId, serviceType, amount, 'completed', 'mock_' + Date.now()]
+    );
 
     res.json({
       success: true,
-      purchaseId: purchase.id,
-      transactionId: purchase.transactionId,
+      purchaseId: purchaseResult.rows[0].id,
+      transactionId: 'mock_' + Date.now(),
       status: 'completed'
     });
 
