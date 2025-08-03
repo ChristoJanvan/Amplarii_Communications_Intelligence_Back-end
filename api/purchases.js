@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { Purchase, User } = require('../models');
-const { createCharge } = require('../utils/yoco');
+const { Purchase, User } = require('../src/models');
+const { createCharge } = require('./yoco');
 
 const router = express.Router();
 
